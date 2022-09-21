@@ -85,9 +85,10 @@ class ViewController: UIViewController {
         dataSource?.apply(snapshot, animatingDifferences: true)
     }
 
-    private func reloadItems(by id: Todo.ID) {
+    private func reloadItem(by todo: Todo) {
+        todos.updateValue(todo, forKey: todo.id)
         if var snapshot = dataSource?.snapshot() {
-            snapshot.reloadItems([id])
+            snapshot.reloadItems([todo.id])
             dataSource?.apply(snapshot, animatingDifferences: true)
         }
     }
@@ -99,8 +100,7 @@ extension ViewController: UICollectionViewDelegate {
         if let id = dataSource?.itemIdentifier(for: indexPath),
             var todo = todos[id] {
             todo.isDone.toggle()
-            todos.updateValue(todo, forKey: id)
-            reloadItems(by: id)
+            reloadItem(by: todo)
             if isSorted {
                 applySnapshot()
             }
