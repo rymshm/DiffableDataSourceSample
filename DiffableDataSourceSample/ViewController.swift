@@ -61,8 +61,7 @@ class ViewController: UIViewController {
     }
 
     private func configureDataSource() {
-        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Todo.ID> { (cell, indexPath, id) in
-            guard let todo = self.todos[id] else { fatalError() }
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Todo> { (cell, indexPath, todo) in
             var content = cell.defaultContentConfiguration()
             content.text = todo.text
             content.imageProperties.tintColor = todo.isDone ? .green : .secondaryLabel
@@ -71,7 +70,7 @@ class ViewController: UIViewController {
         }
         dataSource = UICollectionViewDiffableDataSource<Section, Todo.ID>(collectionView: collectionView) {
             (collectionView: UICollectionView, indexPath: IndexPath, identifier: Todo.ID) -> UICollectionViewCell? in
-            collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: identifier)
+            collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: self.todos[identifier])
         }
     }
 
