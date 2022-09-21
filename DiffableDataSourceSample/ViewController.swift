@@ -10,12 +10,20 @@ import UIKit
 struct Todo: Identifiable {
     let text: String
     var isDone: Bool
-    let id: UUID = UUID()
+    let id: Int
 
     static var sampleData: [Todo] {
         [Int](0..<15).map { index in
-            Todo(text: "ToDo \(index)", isDone: Bool.random())
+            Todo(text: "ToDo \(index)",
+                 isDone: Bool.random(),
+                 id: index)
         }
+    }
+}
+
+extension Sequence where Element: Identifiable {
+    func groupingByUniqueID() -> [Element.ID: Element] {
+        Dictionary(uniqueKeysWithValues: self.map { ($0.id, $0) })
     }
 }
 
@@ -27,13 +35,8 @@ class ViewController: UIViewController {
         case todos
     }
     private var dataSource: UICollectionViewDiffableDataSource<Section, Todo.ID>?
-    private var todos: [Todo] = Todo.sampleData
+    private var todos: [Todo.ID: Todo] = Todo.sampleData.groupingByUniqueID()
     private var isSorted: Bool = false
-    var ids: [Todo.ID] {
-        isSorted ?
-        todos.sorted(by: { ($0.isDone ? 1 : 0) < ($1.isDone ? 1 : 0) }).map { $0.id }
-        : todos.map { $0.id }
-    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -59,7 +62,7 @@ class ViewController: UIViewController {
 
     private func configureDataSource() {
         let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Todo.ID> { (cell, indexPath, id) in
-            let todo = self.todo(id: id).element
+            guard let todo = self.todos[id] else { fatalError() }
             var content = cell.defaultContentConfiguration()
             content.text = todo.text
             content.imageProperties.tintColor = todo.isDone ? .green : .secondaryLabel
@@ -75,6 +78,9 @@ class ViewController: UIViewController {
     private func applySnapshot() {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Todo.ID>()
         snapshot.appendSections([.todos])
+        let ids = todos
+                    .sorted(by: isSorted ? { ($0.value.isDone ? 1 : 0) < ($1.value.isDone ? 1 : 0) } : { $0.value.id < $1.value.id })
+                    .map { $0.value.id }
         snapshot.appendItems(ids)
         dataSource?.apply(snapshot, animatingDifferences: true)
     }
@@ -85,20 +91,16 @@ class ViewController: UIViewController {
             dataSource?.apply(snapshot, animatingDifferences: true)
         }
     }
-
-    private func todo(id: Todo.ID) -> (index: Int, element: Todo) {
-        let index = todos.firstIndex(where: { $0.id == id })!
-        return (index, todos[index])
-    }
 }
 
 extension ViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        if let itemIdentifier = dataSource?.itemIdentifier(for: indexPath) {
-            collectionView.deselectItem(at: indexPath, animated: true)
-            let index = todo(id: itemIdentifier).index
-            todos[index].isDone.toggle()
-            reloadItems(by: itemIdentifier)
+        collectionView.deselectItem(at: indexPath, animated: true)
+        if let id = dataSource?.itemIdentifier(for: indexPath),
+            var todo = todos[id] {
+            todo.isDone.toggle()
+            todos.updateValue(todo, forKey: id)
+            reloadItems(by: id)
             if isSorted {
                 applySnapshot()
             }
