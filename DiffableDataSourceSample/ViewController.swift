@@ -11,20 +11,6 @@ struct Todo: Identifiable {
     let text: String
     var isDone: Bool
     let id: Int
-
-    static var sampleData: [Todo] {
-        [Int](0..<15).map { index in
-            Todo(text: "ToDo \(index)",
-                 isDone: Bool.random(),
-                 id: index)
-        }
-    }
-}
-
-extension Sequence where Element: Identifiable {
-    func groupingByUniqueID() -> [Element.ID: Element] {
-        Dictionary(uniqueKeysWithValues: self.map { ($0.id, $0) })
-    }
 }
 
 class ViewController: UIViewController {
@@ -35,23 +21,21 @@ class ViewController: UIViewController {
         case todos
     }
     private var dataSource: UICollectionViewDiffableDataSource<Section, Todo.ID>?
-    private var todos: [Todo.ID: Todo] = Todo.sampleData.groupingByUniqueID()
-    private var isSorted: Bool = false
+    private var presenter: TodoPresenterInput!
 
     override func viewDidLoad() {
         super.viewDidLoad()
         self.title = "ToDo"
-        sortSwitch.isOn = self.isSorted
-        sortSwitch.addTarget(self, action: #selector(sortTodos), for: .valueChanged)
+        self.presenter = TodoPresenter(output: self)
+        sortSwitch.addTarget(self, action: #selector(onChangedSortSwitch(_:)), for: .valueChanged)
         collectionView.collectionViewLayout = createLayout()
         configureDataSource()
         collectionView.delegate = self
-        applySnapshot()
+        presenter.viewDidLoad()
     }
 
-    @objc private func sortTodos(_ sender: UISwitch) {
-        isSorted = sender.isOn
-        applySnapshot()
+    @objc private func onChangedSortSwitch(_ sender: UISwitch) {
+        presenter.onChangedSortSwitch(isOn: sender.isOn)
     }
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
@@ -70,25 +54,9 @@ class ViewController: UIViewController {
         }
         dataSource = UICollectionViewDiffableDataSource<Section, Todo.ID>(collectionView: collectionView) {
             (collectionView: UICollectionView, indexPath: IndexPath, identifier: Todo.ID) -> UICollectionViewCell? in
-            collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: self.todos[identifier])
-        }
-    }
-
-    private func applySnapshot() {
-        var snapshot = NSDiffableDataSourceSnapshot<Section, Todo.ID>()
-        snapshot.appendSections([.todos])
-        let ids = todos
-                    .sorted(by: isSorted ? { ($0.value.isDone ? 1 : 0) < ($1.value.isDone ? 1 : 0) } : { $0.value.id < $1.value.id })
-                    .map { $0.value.id }
-        snapshot.appendItems(ids)
-        dataSource?.apply(snapshot, animatingDifferences: true)
-    }
-
-    private func reloadItem(by todo: Todo) {
-        todos.updateValue(todo, forKey: todo.id)
-        if var snapshot = dataSource?.snapshot() {
-            snapshot.reloadItems([todo.id])
-            dataSource?.apply(snapshot, animatingDifferences: true)
+            collectionView.dequeueConfiguredReusableCell(using: cellRegistration,
+                                                         for: indexPath,
+                                                         item: self.presenter.todo(by: identifier))
         }
     }
 }
@@ -96,14 +64,100 @@ class ViewController: UIViewController {
 extension ViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
-        if let id = dataSource?.itemIdentifier(for: indexPath),
-            var todo = todos[id] {
-            todo.isDone.toggle()
-            reloadItem(by: todo)
-            if isSorted {
-                applySnapshot()
-            }
+        if let id = dataSource?.itemIdentifier(for: indexPath) {
+            presenter.didSelectTodo(id: id)
         }
+    }
+}
+
+extension ViewController: TodoPresenterOutput {
+    func apply(ids: [Todo.ID]) {
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Todo.ID>()
+        snapshot.appendSections([.todos])
+        snapshot.appendItems(ids)
+        dataSource?.apply(snapshot, animatingDifferences: true)
+    }
+
+    func reload(id: Todo.ID) {
+        if var snapshot = dataSource?.snapshot() {
+            snapshot.reloadItems([id])
+            dataSource?.apply(snapshot, animatingDifferences: true)
+        }
+    }
+}
+
+// MARK: - Presenter層
+
+protocol TodoPresenterInput {
+    func viewDidLoad()
+    func didSelectTodo(id: Todo.ID)
+    func todo(by id: Todo.ID) -> Todo
+    func onChangedSortSwitch(isOn: Bool)
+}
+
+protocol TodoPresenterOutput: AnyObject {
+    func apply(ids: [Todo.ID])
+    func reload(id: Todo.ID)
+}
+
+class TodoPresenter: TodoPresenterInput {
+    private weak var output: TodoPresenterOutput?
+    private let repository: TodoRepositoryInterface
+    private var isSorted: Bool = false
+    private var todos: [Todo] = []
+    private var ids: [Todo.ID] {
+        todos
+            .sorted(by: self.isSorted ? { ($0.isDone ? 1 : 0) < ($1.isDone ? 1 : 0) } : { $0.id < $1.id })
+            .map { $0.id }
+    }
+
+    init(output: TodoPresenterOutput,
+         repository: TodoRepositoryInterface = TodoRepository()) {
+        self.output = output
+        self.repository = repository
+    }
+
+    func viewDidLoad() {
+        repository.fetch { todos in
+            self.todos = todos
+            self.output?.apply(ids: self.ids)
+        }
+    }
+
+    func todo(by id: Todo.ID) -> Todo {
+        let index = todos.firstIndex(where: { id == $0.id })!
+        return todos[index]
+    }
+
+    func onChangedSortSwitch(isOn: Bool) {
+        isSorted = isOn
+        self.output?.apply(ids: ids)
+    }
+
+    func didSelectTodo(id: Todo.ID) {
+        let index = todos.firstIndex(where: { id == $0.id })!
+        todos[index].isDone.toggle()
+        output?.reload(id: id)
+        if isSorted {
+            output?.apply(ids: ids)
+        }
+    }
+}
+
+// MARK: - Model層
+
+protocol TodoRepositoryInterface {
+    func fetch(completion: @escaping (([Todo]) -> Void))
+}
+
+struct TodoRepository: TodoRepositoryInterface {
+    func fetch(completion: @escaping (([Todo]) -> Void)) {
+        let todos = [Int](0..<20).map { index in
+            Todo(text: "ToDo \(index)",
+                 isDone: Bool.random(),
+                 id: index)
+        }
+        completion(todos)
     }
 }
 
