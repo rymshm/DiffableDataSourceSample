@@ -59,6 +59,13 @@ class ViewController: UIViewController {
                                                          item: self.presenter.todo(by: identifier))
         }
     }
+
+    private func createSnapshot() -> NSDiffableDataSourceSnapshot<Section, Todo.ID> {
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Todo.ID>()
+        snapshot.appendSections([.todos])
+        snapshot.appendItems(presenter.ids)
+        return snapshot
+    }
 }
 
 extension ViewController: UICollectionViewDelegate {
@@ -71,18 +78,12 @@ extension ViewController: UICollectionViewDelegate {
 }
 
 extension ViewController: TodoPresenterOutput {
-    func apply(ids: [Todo.ID]) {
-        var snapshot = NSDiffableDataSourceSnapshot<Section, Todo.ID>()
-        snapshot.appendSections([.todos])
-        snapshot.appendItems(ids)
-        dataSource?.apply(snapshot, animatingDifferences: true)
-    }
-
-    func reload(id: Todo.ID) {
-        if var snapshot = dataSource?.snapshot() {
-            snapshot.reloadItems([id])
-            dataSource?.apply(snapshot, animatingDifferences: true)
+    func reload(updateIds: [Todo.ID]) {
+        var snapshot = createSnapshot()
+        if !updateIds.isEmpty {
+            snapshot.reloadItems(updateIds)
         }
+        dataSource?.apply(snapshot, animatingDifferences: true)
     }
 }
 
@@ -91,13 +92,13 @@ extension ViewController: TodoPresenterOutput {
 protocol TodoPresenterInput {
     func viewDidLoad()
     func didSelectTodo(id: Todo.ID)
-    func todo(by id: Todo.ID) -> Todo
     func onChangedSortSwitch(isOn: Bool)
+    func todo(by id: Todo.ID) -> Todo
+    var ids: [Todo.ID] { get }
 }
 
 protocol TodoPresenterOutput: AnyObject {
-    func apply(ids: [Todo.ID])
-    func reload(id: Todo.ID)
+    func reload(updateIds: [Todo.ID])
 }
 
 class TodoPresenter: TodoPresenterInput {
@@ -105,9 +106,9 @@ class TodoPresenter: TodoPresenterInput {
     private let repository: TodoRepositoryInterface
     private var isSorted: Bool = false
     private var todos: [Todo] = []
-    private var ids: [Todo.ID] {
+    var ids: [Todo.ID] {
         todos
-            .sorted(by: self.isSorted ? { ($0.isDone ? 1 : 0) < ($1.isDone ? 1 : 0) } : { $0.id < $1.id })
+            .sorted(by: isSorted ? { ($0.isDone ? 1 : 0) < ($1.isDone ? 1 : 0) } : { $0.id < $1.id })
             .map { $0.id }
     }
 
@@ -120,7 +121,7 @@ class TodoPresenter: TodoPresenterInput {
     func viewDidLoad() {
         repository.fetch { todos in
             self.todos = todos
-            self.output?.apply(ids: self.ids)
+            self.output?.reload(updateIds: [])
         }
     }
 
@@ -131,16 +132,13 @@ class TodoPresenter: TodoPresenterInput {
 
     func onChangedSortSwitch(isOn: Bool) {
         isSorted = isOn
-        self.output?.apply(ids: ids)
+        self.output?.reload(updateIds: [])
     }
 
     func didSelectTodo(id: Todo.ID) {
         let index = todos.firstIndex(where: { id == $0.id })!
         todos[index].isDone.toggle()
-        output?.reload(id: id)
-        if isSorted {
-            output?.apply(ids: ids)
-        }
+        output?.reload(updateIds: [id])
     }
 }
 
