@@ -28,9 +28,7 @@ class ViewController: UIViewController {
         self.title = "ToDo"
         self.presenter = TodoPresenter(output: self)
         sortSwitch.addTarget(self, action: #selector(onChangedSortSwitch(_:)), for: .valueChanged)
-        collectionView.collectionViewLayout = createLayout()
-        configureDataSource()
-        collectionView.delegate = self
+        configureCollectionView()
         presenter.viewDidLoad()
     }
 
@@ -38,13 +36,12 @@ class ViewController: UIViewController {
         presenter.onChangedSortSwitch(isOn: sender.isOn)
     }
 
-    private func createLayout() -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout {
-            .list(using: .init(appearance: .plain), layoutEnvironment: $1)
-        }
-    }
-
-    private func configureDataSource() {
+    private func configureCollectionView() {
+        // layout
+        collectionView.collectionViewLayout = listLayout()
+        // delegate
+        collectionView.delegate = self
+        // datasource
         let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Todo> { (cell, indexPath, todo) in
             var content = cell.defaultContentConfiguration()
             content.text = todo.text
@@ -58,6 +55,10 @@ class ViewController: UIViewController {
                                                          for: indexPath,
                                                          item: self.presenter.todo(by: identifier))
         }
+    }
+
+    private func listLayout() -> UICollectionViewLayout {
+        UICollectionViewCompositionalLayout.list(using: .init(appearance: .plain))
     }
 
     private func createSnapshot() -> NSDiffableDataSourceSnapshot<Section, Todo.ID> {
@@ -78,10 +79,10 @@ extension ViewController: UICollectionViewDelegate {
 }
 
 extension ViewController: TodoPresenterOutput {
-    func reload(updateIds: [Todo.ID]) {
+    func updateSnapshot(reloadItems: [Todo.ID]) {
         var snapshot = createSnapshot()
-        if !updateIds.isEmpty {
-            snapshot.reloadItems(updateIds)
+        if !reloadItems.isEmpty {
+            snapshot.reloadItems(reloadItems)
         }
         dataSource?.apply(snapshot, animatingDifferences: true)
     }
@@ -98,7 +99,7 @@ protocol TodoPresenterInput {
 }
 
 protocol TodoPresenterOutput: AnyObject {
-    func reload(updateIds: [Todo.ID])
+    func updateSnapshot(reloadItems: [Todo.ID])
 }
 
 class TodoPresenter: TodoPresenterInput {
@@ -121,7 +122,7 @@ class TodoPresenter: TodoPresenterInput {
     func viewDidLoad() {
         repository.fetch { todos in
             self.todos = todos
-            self.output?.reload(updateIds: [])
+            self.output?.updateSnapshot(reloadItems: [])
         }
     }
 
@@ -132,13 +133,13 @@ class TodoPresenter: TodoPresenterInput {
 
     func onChangedSortSwitch(isOn: Bool) {
         isSorted = isOn
-        self.output?.reload(updateIds: [])
+        output?.updateSnapshot(reloadItems: [])
     }
 
     func didSelectTodo(id: Todo.ID) {
         let index = todos.firstIndex(where: { id == $0.id })!
         todos[index].isDone.toggle()
-        output?.reload(updateIds: [id])
+        output?.updateSnapshot(reloadItems: [id])
     }
 }
 
