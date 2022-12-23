@@ -15,7 +15,7 @@ struct Todo: Identifiable {
 
 class ViewController: UIViewController {
     @IBOutlet private var collectionView: UICollectionView!
-    @IBOutlet var sortSwitch: UISwitch!
+    @IBOutlet private var sortSwitch: UISwitch!
 
     private enum Section {
         case todos
@@ -43,11 +43,12 @@ class ViewController: UIViewController {
         collectionView.delegate = self
         // datasource
         let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Todo> { (cell, indexPath, todo) in
-            var content = cell.defaultContentConfiguration()
-            content.text = todo.text
-            content.imageProperties.tintColor = todo.isDone ? .green : .secondaryLabel
-            content.image = UIImage(systemName: todo.isDone ? "checkmark.circle" : "circle")
-            cell.contentConfiguration = content
+            cell.contentConfiguration = TodoContentConfiguration(isDone: todo.isDone, text: todo.text)
+//            var content = cell.defaultContentConfiguration()
+//            content.text = todo.text
+//            content.imageProperties.tintColor = todo.isDone ? .green : .secondaryLabel
+//            content.image = UIImage(systemName: todo.isDone ? "checkmark.circle" : "circle")
+//            cell.contentConfiguration = content
         }
         dataSource = UICollectionViewDiffableDataSource<Section, Todo.ID>(collectionView: collectionView) {
             (collectionView: UICollectionView, indexPath: IndexPath, identifier: Todo.ID) -> UICollectionViewCell? in
@@ -159,4 +160,68 @@ struct TodoRepository: TodoRepositoryInterface {
         completion(todos)
     }
 }
+
+// MARK: - Custom Content Configuration
+
+struct TodoContentConfiguration: UIContentConfiguration {
+    var isDone: Bool
+    var text: String
+
+    func makeContentView() -> UIView & UIContentView { ToDoContentView(configuration: self) }
+    func updated(for state: UIConfigurationState) -> TodoContentConfiguration { self }
+}
+
+class ToDoContentView: UIView, UIContentView {
+    private let checkMarkImageView: UIImageView = .init()
+    private let label: UILabel =  {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: UIFont.buttonFontSize, weight: .semibold)
+        return label
+    }()
+    private let stackView: UIStackView = {
+        let view = UIStackView()
+        view.alignment = .center
+        view.axis = .horizontal
+        view.spacing = 8
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    var configuration: UIContentConfiguration {
+        didSet {
+            guard let configuration = configuration as? TodoContentConfiguration else { return }
+            checkMarkImageView.image = UIImage(systemName: configuration.isDone ? "checkmark.circle" : "circle")
+            checkMarkImageView.tintColor = configuration.isDone ? .green : .secondaryLabel
+            label.text = configuration.text
+        }
+    }
+
+    init(configuration: TodoContentConfiguration) {
+        self.configuration = configuration
+        super.init(frame: .zero)
+
+        addSubview(stackView)
+        stackView.addArrangedSubview(label)
+        stackView.addLayoutGuide(UILayoutGuide())
+        stackView.addArrangedSubview(checkMarkImageView)
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor,
+                                               constant: 16),
+            stackView.trailingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor,
+                                                constant: -16),
+            stackView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor,
+                                           constant: 16),
+            stackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor,
+                                              constant: -16),
+
+            checkMarkImageView.widthAnchor.constraint(equalToConstant: 24),
+            checkMarkImageView.heightAnchor.constraint(equalTo: checkMarkImageView.widthAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 
